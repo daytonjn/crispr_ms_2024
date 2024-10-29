@@ -1,0 +1,254 @@
+---
+title: "injections_2023+2022_eclosion"
+output: html_notebook
+---
+
+load libraries
+
+```{r, quiet=TRUE}
+library(reshape2)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(bbmle)      # for ICtab()
+library(car)        # for Anova()
+library(emmeans)    # for multiple comparisons!
+library(multcomp)
+library(multcompView)
+library(ggpubr)
+library(lubridate)
+library(circular)
+
+```
+
+read in data
+```{r}
+injections_eclosion <- read_csv("../data/eclosion_combined.csv", 
+    col_types = cols(date_eclosion = col_date(format = "%m/%d/%Y"), 
+        time_edt = col_time(format = "%H:%M"), 
+        time_azt = col_time(format = "%H:%M")))
+
+injections_eclosion$injection_period = as.factor(injections_eclosion$injection_period)
+injections_eclosion$strain = factor(injections_eclosion$strain,
+                                       levels = c("b_nd", "be", "be*lf", "bz", "lf_short", "fh_mid",
+                                                  "fh_longer","lf_long*uz", "uz"))
+injections_eclosion$sex = as.factor(injections_eclosion$sex)
+injections_eclosion$treatment = factor(injections_eclosion$treatment,
+                                       levels = c("control", "period", "pdfr"))
+injections_eclosion$exon = as.factor(injections_eclosion$exon)
+injections_eclosion$genotype = as.factor(injections_eclosion$genotype)
+injections_eclosion$genotype_consequence = as.factor(injections_eclosion$genotype_consequence)
+injections_eclosion = injections_eclosion %>% mutate(voltinism = dplyr::recode(strain,
+                                                                               "b_nd" = 'bivoltine',
+                                                                               "be" = 'bivoltine',
+                                                                               "be*lf" = 'bivoltine',
+                                                                               "bz" = 'bivoltine',
+                                                                               "lf_short" = 'bivoltine',
+                                                                               "fh_mid" = 'bivoltine',
+                                                                               "fh_longer" = 'univoltine',
+                                                                               "lf_long*uz" = 'univoltine',
+                                                                               "uz" = 'univoltine'))
+
+injections_eclosion = injections_eclosion %>% drop_na(time_edt, sex) %>% filter(strain != "be*lf" & strain != "fh_mid", injection_period != 2021) %>% droplevels()
+
+injections_eclosion = injections_eclosion %>% group_by(injection_period, treatment, strain) %>%
+  filter(n() > 5) %>% ungroup()
+
+#recode lf so it falls before lf_long*uz
+injections_eclosion = injections_eclosion %>% mutate(strain = dplyr::recode(strain,lf_short = "lf"))
+
+```
+
+decimate eclosion time in AZT
+```{r}
+#convert minutes to decimal
+temp_min = lubridate::minute(injections_eclosion$time_azt)/60*100
+temp_hour = lubridate::hour(injections_eclosion$time_azt)
+
+add_leading_zeros <- function(character_vector){
+  for (i in 1:length(character_vector)){
+  if (is.na(character_vector[i])){
+    next
+  }
+  if (nchar(character_vector[i]) == 2){
+    next
+  }
+  if (nchar(character_vector[i]) == 1){
+  character_vector[i] = paste0(0, character_vector[i])
+    next
+  }
+  }
+  return (character_vector)
+}
+
+injections_eclosion$time_azt_dec = paste0(add_leading_zeros(temp_hour), ".", add_leading_zeros(temp_min)) %>% as.numeric()
+
+injections_eclosion$time_azt_dec = floor(injections_eclosion$time_azt_dec)
+
+#correct azt 24 to azt0 :)
+injections_eclosion$time_azt_dec[which(injections_eclosion$time_azt_dec == 24)] <- 0
+
+#convert time_azt_dec to radians
+injections_eclosion$time_radians = circular(injections_eclosion$time_azt_dec/24*2*pi,units = "radians")
+
+#assign not sequenced to NA genotypes so that we can differentiate confirmed mutants in plots
+injections_eclosion$genotype = with(injections_eclosion, factor(ifelse(is.na(genotype), "not_sequenced", paste(genotype)), levels = c(levels(genotype), "not_sequenced")))
+
+#replace in-frame mutant with "wt" because the expectation is these will behave normally 
+injections_eclosion$genotype[which(injections_eclosion$genotype_consequence == "non_frameshift")] <- "wt"
+
+table_WinfreesR = injections_eclosion %>% group_by(injection_period, voltinism, treatment) %>% count(time_azt_dec) %>% pivot_wider(names_from = time_azt_dec, values_from=n)
+
+table_WinfreesR = table_WinfreesR %>% relocate("0", .after = "treatment")%>% relocate("1", .after = "0") %>% relocate("2", .after = "1") %>% relocate("6", .after = "5") %>%
+  relocate("8", .after = "7") %>% relocate("9", .after = "8") %>% relocate("10", .after = "9") %>%  relocate("11", .after = "10") %>% relocate("12", .after = "11") %>% relocate("23", .after = "22")
+
+```
+
+summary statistics
+```{r}
+results_df = injections_eclosion %>% ungroup() %>% 
+  group_by(voltinism, treatment, injection_period) %>% 
+  filter(n() > 3) %>%
+  summarize(n = n(),
+            circ_mean_eclose = round(ifelse(mean(time_radians)*12/pi < 0,
+                                            24+mean(time_radians)*12/pi,
+                                            mean(time_radians)*12/pi), 1),
+            lower95 = round(ifelse((t.test(time_radians)$conf.int[1]*12/pi) < 0,
+                                   24 + t.test(time_radians)$conf.int[1]*12/pi,
+                                   t.test(time_radians)$conf.int[1]*12/pi), 1),
+            upper95 = round(ifelse((t.test(time_radians)$conf.int[2]*12/pi) < 0,
+                                   24 + t.test(time_radians)$conf.int[2]*12/pi,
+                                   t.test(time_radians)$conf.int[2]*12/pi), 1),
+            n_first16 = sum(time_azt_dec >= 0 & time_azt_dec < 16),
+            n_second8 = sum(time_azt_dec >= 16 & time_azt_dec <= 24),
+            n_inside = sum(time_azt_dec >= 15 & time_azt_dec <= 22), #azt15 through azt22
+            n_outside = sum(time_azt_dec >= 23 | time_azt_dec < 15 ), #azt23 through azt14
+            winfreeR = round(100*n_outside/n_inside, 0),
+            perc_inside = n_inside/(n_inside+n_outside)) %>% 
+  ungroup()
+
+
+m1_window_a <- glm(cbind(n_inside,n_outside) ~ treatment*voltinism*injection_period, 
+                  data = results_df, 
+                  family = binomial(link = 'logit'))
+
+m1_window_b <- glm(cbind(n_inside,n_outside) ~ treatment*injection_period, 
+                  data = results_df, 
+                  family = binomial(link = 'logit'))
+
+m1_window_c <- glm(cbind(n_inside,n_outside) ~ treatment+injection_period, 
+                  data = results_df, 
+                  family = binomial(link = 'logit'))
+
+ICtab(m1_window_a,m1_window_b, m1_window_c)
+
+#m1_window_a = treatment*injection_period*voltinism
+summary(m1_window_a) #AIC 64.5, df=11
+Anova(m1_window_a)
+AIC(m1_window_a)
+#m1_window_b = treatment*injection_period
+summary(m1_window_b) #AIC 59.0, df=6
+AIC(m1_window_b)
+Anova(m1_window_b)
+#m1_window_c = treatment+injection_period
+summary(m1_window_c) #AIC 57.9, df=4
+AIC(m1_window_c)
+Anova(m1_window_c)
+
+m1_window_a_emms = emmeans(m1_window_a, ~ treatment*voltinism | injection_period, type = 'response')
+pairs(emmeans(m1_window_a, ~ treatment*voltinism | injection_period, type = 'response'), adjust='none')
+
+m1_multcomp <- multcomp::cld(m1_window_a_emms, adjust = 'none', Letters = letters, decreasing=TRUE, by = c('injection_period')) %>%
+  mutate(.group = gsub(" ", "", .group))
+
+m1_multcomp <- m1_multcomp %>% mutate(prob_out = round(1-prob,2))
+
+#treatment*injection_year
+m1_window_b_emms = emmeans(m1_window_b, ~ treatment | injection_period, type = 'response')
+m1_multcomp_b <- multcomp::cld(m1_window_b_emms, adjust = 'none', Letters = letters, decreasing=TRUE, by = c('injection_period')) %>%
+  mutate(.group = gsub(" ", "", .group))
+
+pairs(emmeans(m1_window_b, ~ treatment | injection_period, type = 'response'), adjust='none')
+contrast(emmeans(m1_window_b, ~ treatment | injection_period), adjust='none')
+
+```
+
+
+Plot side-by-side bar plots for eclosion within vs. outside of the gate
+
+```{r}
+p_8hr_volt = ggplot(data = m1_multcomp,
+       aes(x = voltinism, y = prob, fill = treatment)) +
+  geom_col(position = position_dodge(), alpha = 0.5) +
+  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width=0.2, position = position_dodge(0.9))+
+  geom_text(data = m1_multcomp,
+                   aes(label = .group, x = voltinism, y = rep(1.05, 12)),
+                                      color = 'black', size = 6, position = position_dodge(0.9)) + facet_wrap(~injection_period) +
+  facet_wrap(~injection_period)+
+  theme_bw() +
+  labs(x = "", y = "P(Eclosed) within Window") +
+  scale_fill_manual(values = c('period' = "#F8766D",
+                               'control' = "#00BFC4",
+                               'pdfr' = 'darkorchid'),
+                    labels = c('control' = "wildtype",
+                               'pdfr' = expression(italic(pdfr)~F[0]),
+                               'period' = expression(italic(period)~F[0]))) +
+  ylim(0,1.05) +
+  scale_x_discrete(labels = c("Bivoltine", "Univoltine"), name = "") +
+  labs(x = "", y = "Rhythmic Strength") +
+       theme(text = element_text(size = 14, family = "sans", color = 'black'),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.title = element_blank())
+
+ggsave("../plots/figureS1.png", plot = p_8hr_volt, width = 8, height = 4, dpi = 800, bg = 'white')
+
+```
+
+2023-period
+```{r}
+#global 2023
+test_2023 = injections_eclosion %>% filter(injection_period == 2023,
+                                           strain == "b_nd" | strain == "lf_long*uz" | strain == 'bz' | strain == 'lf') %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians, time_azt_dec, voltinism)
+
+ks.test(test_2023$time_radians[which(test_2023$treatment == "period")],
+        test_2023$time_radians[which(test_2023$treatment == "control")])
+rayleigh.test(test_2023$time_radians[which(test_2023$treatment == "period")])
+rayleigh.test(test_2023$time_radians[which(test_2023$treatment == "control")])
+
+watson.two.test(test_2023$time_radians[which(test_2023$treatment == "period")],
+        test_2023$time_radians[which(test_2023$treatment == "control")])
+
+#genotyped mutants
+rayleigh.test(test_2023$time_radians[intersect(which(test_2023$treatment == "period"), which(test_2023$genotype == 'mutant'))])
+
+ks.test(test_2023$time_radians[intersect(which(test_2023$treatment == "period"), which(test_2023$genotype == 'mutant'))],
+                test_2023$time_radians[which(test_2023$treatment == "control")])
+
+#control 2023
+watson.two.test(test_2023$time_radians[intersect(which(test_2023$treatment == "control"), which(test_2023$voltinism == 'bivoltine'))],
+                test_2023$time_radians[intersect(which(test_2023$treatment == "control"), which(test_2023$voltinism == 'univoltine'))])
+
+```
+
+2022-period
+```{r}
+#global 2022
+test_2022 = injections_eclosion %>% filter(injection_period == 2022,
+                                           strain == "be" | strain == "uz" ) %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians, time_azt_dec, voltinism)
+
+ks.test(test_2022$time_radians[which(test_2022$treatment == "period")],
+        test_2022$time_radians[which(test_2022$treatment == "control")])
+rayleigh.test(test_2022$time_radians[which(test_2022$treatment == "period")])
+rayleigh.test(test_2022$time_radians[which(test_2022$treatment == "control")])
+
+watson.two.test(test_2022$time_radians[which(test_2022$treatment == "period")],
+        test_2022$time_radians[which(test_2022$treatment == "control")])
+
+
+#genotyped mutants
+rayleigh.test(test_2022$time_radians[intersect(which(test_2022$treatment == "period"), which(test_2022$genotype == 'mutant'))])
+ks.test(test_2022$time_radians[intersect(which(test_2022$treatment == "period"), which(test_2022$genotype == 'mutant'))],
+                test_2022$time_radians[which(test_2022$treatment == "control")])
+
+```

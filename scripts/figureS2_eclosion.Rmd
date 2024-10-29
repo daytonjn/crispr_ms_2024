@@ -1,0 +1,234 @@
+
+summary statistics
+
+period and pdfr combined into a single plot (do not like)
+```{r}
+injections_eclosion = injections_eclosion %>% dplyr::select(injection_period, strain, treatment, genotype, voltinism, time_azt_dec, time_radians)
+
+injections_eclosion = injections_eclosion %>% add_row(injection_period = "2023", strain = 'fh_longer', treatment = 'pdfr',
+                                                      genotype = 'not_sequenced', voltinism = 'univoltine', time_azt_dec = NA,
+                                                      time_radians = NA)
+
+injections_eclosion$treatment = factor(injections_eclosion$treatment,
+                                       levels = c("pdfr", "period", "control"))
+
+
+ecl_2022 = ggplot(injections_eclosion %>% filter(injection_period == 2022,
+                                      strain == "uz" | strain == "be"),
+       aes(y = interaction(treatment, voltinism), x = time_azt_dec, colour = treatment)) +
+  geom_violin(alpha = 0.5, size = 0.5) +
+  geom_jitter(aes(y = interaction(treatment, voltinism), x = time_azt_dec, colour = treatment, shape = genotype),
+             size = 2.5, alpha = 0.5, height = 0.3, width = 0.2) +
+  scale_colour_manual(values = c('period' = "#F8766D",
+                               'control' = "#00BFC4",
+                               'pdfr' = 'darkorchid'),
+                    labels = c('control' = "wildtype", 
+                               'pdfr' = expression(italic(pdfr)~F[0]),
+                               'period' = expression(italic(period)~F[0]))) +
+  scale_shape_manual(values = c('mutant' =8,
+                               'wt' = 16,
+                               'not_sequenced' = 16),
+                     guide = "none") +
+  scale_x_continuous(limits = c(-0.5,24.5), breaks = c(seq(0,24,by=4))) +
+  theme_bw() +
+  theme(text = element_text(size = 14, family = "sans", color = 'black'),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.title = element_blank()) + xlab("Eclosion Time (AZT)") +
+  xlab("Eclosion Time (AZT)") + ylab ("") + 
+  annotate("rect", xmin=-Inf, xmax=16, ymin=-Inf, ymax=Inf, alpha=0.2, fill="lightyellow") +
+  annotate("rect", xmin=16, xmax=24.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  scale_y_discrete(labels = c("B", "B",  "B", "U", "U",  "U"), name = "Strain") +
+    geom_vline(xintercept = 15, linetype = 'dashed', color = 'black', size = 1) +
+    geom_vline(xintercept = 22, linetype = 'dashed', color = 'black', size = 1)
+
+
+ecl_2023 = ggplot(injections_eclosion %>% filter(injection_period == 2023,
+                                      strain == "b_nd" | strain == "lf_long*uz" | strain == 'bz' | strain == 'lf' | strain == 'uz' | strain == 'fh_longer'),
+       aes(y = interaction(treatment, voltinism), x = time_azt_dec, colour = treatment)) +
+  geom_violin(alpha = 0.5, size = 0.5) +
+  geom_jitter(aes(y = interaction(treatment, voltinism), x = time_azt_dec, colour = treatment, shape = genotype),
+             size = 2.5, alpha = 0.5, height = 0.3, width = 0.2) +
+  scale_colour_manual(values = c('period' = "#F8766D",
+                               'control' = "#00BFC4",
+                               'pdfr' = 'darkorchid'),
+                    labels = c('control' = "wildtype", 
+                               'pdfr' = expression(italic(pdfr)~F[0]),
+                               'period' = expression(italic(period)~F[0]))) +
+  scale_shape_manual(values = c('mutant' =8,
+                               'wt' = 16,
+                               'not_sequenced' = 16),
+                     guide = "none") +
+  scale_x_continuous(limits = c(-0.5,24.5), breaks = c(seq(0,24,by=4))) +
+  theme_bw() +
+  theme(text = element_text(size = 14, family = "sans", color = 'black'),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.title = element_blank()) + xlab("Eclosion Time (AZT)") +
+  xlab("Eclosion Time (AZT)") + ylab ("") + 
+  annotate("rect", xmin=-Inf, xmax=16, ymin=-Inf, ymax=Inf, alpha=0.2, fill="lightyellow") +
+  annotate("rect", xmin=16, xmax=24.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  scale_y_discrete(labels = c("B", "B", "B", "U", "U", "U"), name = 'Strain', drop=F) +
+    geom_vline(xintercept = 15, linetype = 'dashed', color = 'black', size = 1) +
+    geom_vline(xintercept = 22, linetype = 'dashed', color = 'black', size = 1)
+
+ecl_all = ggarrange(ecl_2022, ecl_2023, ncol=2, common.legend=TRUE, legend = 'top', labels = c("A", "B"))
+
+ecl_all
+
+ggsave("../plots/figure_s2.png", plot = ecl_all, width = 8, height = 6, dpi = 1000, bg='white')
+
+```
+
+*2023* statistics for period:
+
+```{r}
+per_2023_b = injections_eclosion %>% filter(injection_period == 2023, voltinism == "bivoltine", treatment == 'period') %>%
+dplyr::select(injection_period, strain, treatment, genotype, time_radians, time_azt_dec)
+
+ 
+ks.test(per_2023_b$time_radians, wt_2023_b$time_radians)
+watson.two.test(per_2023_b$time_radians, wt_2023_b$time_radians)
+watson.two.test(per_2023_b$time_radians[which(per_2023_b$genotype == "mutant")], wt_2023_b$time_radians)
+
+rayleigh.test(per_2023_b$time_radians)
+rayleigh.test(per_2023_b$time_radians[which(per_2023_b$genotype == "mutant")])
+
+rayleigh.test(wt_2023_b$time_radians)
+
+per_2023_u = injections_eclosion %>% filter(injection_period == 2023, strain == "lf_long*uz" | strain == 'uz',treatment == 'period') %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+wt_2023_u = injections_eclosion %>% filter(injection_period == 2023, strain == "lf_long*uz" | strain == 'uz', treatment == 'control') %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+  
+ks.test(per_2023_u$time_radians, wt_2023_u$time_radians)
+ks.test(per_2023_u$time_radians[which(per_2023_u$genotype == "mutant")], wt_2023_u$time_radians)
+
+watson.two.test(per_2023_u$time_radians, wt_2023_u$time_radians)
+watson.two.test(per_2023_u$time_radians[which(per_2023_u$genotype == "mutant")], wt_2023_u$time_radians)
+
+rayleigh.test(per_2023_u$time_radians)
+rayleigh.test(per_2023_u$time_radians[which(per_2023_u$genotype == "mutant")])
+rayleigh.test(wt_2023_u$time_radians)
+
+#global 2023
+test_2023 = injections_eclosion %>% filter(injection_period == 2023,
+                                           strain == "b_nd" | strain == "lf_long*uz" | strain == 'bz' | strain == 'lf') %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians, time_azt_dec, voltinism)
+
+watson.two.test(test_2023$time_radians[which(test_2023$treatment == 'period')],
+test_2023$time_radians[which(test_2023$treatment == 'control')])
+
+watson.two.test(test_2023$time_radians[intersect(which(test_2023$treatment == "period"), which(test_2023$genotype == 'mutant'))],
+test_2023$time_radians[which(test_2023$treatment == "control")])
+
+#control 2023
+watson.two.test(test_2023$time_radians[intersect(which(test_2023$treatment == "control"), which(test_2023$voltinism == 'bivoltine'))],
+                test_2023$time_radians[intersect(which(test_2023$treatment == "control"), which(test_2023$voltinism == 'univoltine'))])
+```
+
+*2022* statistics for period
+```{r}
+#be
+per_2022_b <- injections_eclosion %>% dplyr::filter(injection_period == "2022", strain == "be", treatment == 'period') %>%
+dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+
+wt_2022_b = injections_eclosion %>% filter(injection_period == "2022", strain == "be", treatment == 'control') %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+  
+watson.two.test(per_2022_b$time_radians, wt_2022_b$time_radians)
+watson.two.test(per_2022_b$time_radians[which(per_2022_b$genotype == "mutant")], wt_2022_b$time_radians)
+
+rayleigh.test(per_2022_b$time_radians)
+rayleigh.test(wt_2022_b$time_radians)
+
+#uz
+per_2022_u = injections_eclosion %>% filter(injection_period == 2022, strain == "uz", treatment == 'period') %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+wt_2022_u = injections_eclosion %>% filter(injection_period == 2022, strain == "uz", treatment == 'control') %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+  
+watson.two.test(per_2022_u$time_radians, wt_2022_u$time_radians)
+watson.two.test(per_2022_u$time_radians[which(per_2022_u$genotype == "mutant")], wt_2022_u$time_radians)
+
+rayleigh.test(per_2022_u$time_radians)
+rayleigh.test(per_2022_u$time_radians[which(per_2022_u$genotype == "mutant")])
+rayleigh.test(wt_2022_u$time_radians)
+
+#global 2022
+test_2022 = injections_eclosion %>% filter(injection_period == 2022,
+                                           strain == "be" | strain == "uz", treatment != 'pdfr' ) %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians, time_azt_dec)
+
+rayleigh.test(test_2022$time_radians[which(test_2022$treatment == "period")])
+rayleigh.test(test_2022$time_radians[which(test_2022$treatment == "control")])
+
+watson.two.test(test_2022$time_radians[which(test_2022$treatment == "period")],
+        test_2022$time_radians[which(test_2022$treatment == "control")])
+        
+watson.williams.test(test_2022$time_radians, group=test_2022$treatment)
+
+#genotyped mutants
+rayleigh.test(test_2022$time_radians[intersect(which(test_2022$treatment == "period"), which(test_2022$genotype == 'mutant'))])
+watson.two.test(test_2022$time_radians[intersect(which(test_2022$treatment == "period"), which(test_2022$genotype == 'mutant'))],
+                test_2022$time_radians[which(test_2022$treatment == "control")])
+
+#control
+watson.two.test(wt_2022_b$time_radians, wt_2022_u$time_radians)
+wilcox.test(wt_2022_b$time_radians, wt_2022_u$time_radians)
+
+```
+
+
+pdfr 2023
+```{r}
+#global 2023 (only univoltine pdfr mutants were generated)
+test_2023 = injections_eclosion %>% filter(injection_period == 2023,
+                                           strain == "lf_long*uz" | strain == 'fh_longer') %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians, time_azt_dec, voltinism)
+
+rayleigh.test(test_2023$time_radians[which(test_2023$treatment == "pdfr")])
+rayleigh.test(test_2023$time_radians[which(test_2023$treatment == "control")])
+
+watson.two.test(test_2023$time_radians[which(test_2023$treatment == "pdfr")],
+        test_2023$time_radians[which(test_2023$treatment == "control")])
+
+#genotyped mutants
+rayleigh.test(test_2023$time_radians[intersect(which(test_2023$treatment == "pdfr"), which(test_2023$genotype == 'mutant'))])
+
+```
+
+
+pdfr 2022
+```{r}
+
+#be
+pdfr_2022_b = injections_eclosion %>% filter(injection_period == 2022, strain == "be", treatment == "pdfr")%>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+wt_2022_b = injections_eclosion %>% filter(injection_period == 2022, strain == "be", treatment == 'control')%>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+  
+watson.two.test(pdfr_2022_b$time_radians, wt_2022_b$time_radians)
+rayleigh.test(pdfr_2022_b$time_radians)
+rayleigh.test(wt_2022_b$time_radians)
+
+#uz
+pdfr_2022_u = injections_eclosion %>% filter(injection_period == 2022, strain == "uz", treatment == "pdfr")%>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+wt_2022_u = injections_eclosion %>% filter(injection_period == 2022, strain == "uz", treatment == 'control')%>% dplyr::select(injection_period, strain, treatment, genotype, time_radians)
+  
+watson.two.test(pdfr_2022_u$time_radians, wt_2022_u$time_radians)
+
+rayleigh.test(pdfr_2022_u$time_radians)
+rayleigh.test(wt_2022_u$time_radians)
+
+#global 2022
+test_2022 = injections_eclosion %>% filter(injection_period == 2022,
+                                           strain == "be" | strain == "uz", treatment != "period") %>% dplyr::select(injection_period, strain, treatment, genotype, time_radians, time_azt_dec, voltinism)
+
+rayleigh.test(test_2022$time_radians[which(test_2022$treatment == "pdfr")])
+rayleigh.test(test_2022$time_radians[which(test_2022$treatment == "control")])
+
+watson.two.test(test_2022$time_radians[which(test_2022$treatment == "pdfr")],
+        test_2022$time_radians[which(test_2022$treatment == "control")])
+
+
+#genotyped mutants
+rayleigh.test(test_2022$time_radians[intersect(which(test_2022$treatment == "pdfr"), which(test_2022$genotype == 'mutant'))])
+
+#control 2023
+watson.two.test(test_2022$time_radians[intersect(which(test_2022$treatment == "control"), which(test_2022$voltinism == 'bivoltine'))],
+                test_2022$time_radians[intersect(which(test_2022$treatment == "control"), which(test_2022$voltinism == 'univoltine'))])
+
+
+```
+

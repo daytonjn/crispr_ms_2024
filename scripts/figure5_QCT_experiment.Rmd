@@ -1,0 +1,250 @@
+---
+title: "injections_2023_ptth_diapause"
+output: html_notebook
+---
+
+
+```{r, quiet=TRUE, warning=FALSE}
+library(reshape2)
+library(readr)
+library(tidyverse)
+library(bbmle)      # for ICtab()
+library(pscl)       # for zi models
+library(car)        # for Anova()
+library(lme4)       # for lmer() and glmer() 
+library(emmeans)    # for multiple comparisons!
+library(multcomp)
+library(multcompView)
+library(ggpubr)
+library(lmtest)
+library(report)
+
+```
+
+
+read in data
+```{r, quiet=TRUE}
+
+ptth_diapause <- read_csv("../data/injections_2023_ptth_diapause.csv", 
+    col_types = cols(treatment = col_factor(levels = c("ptth","control")),
+                     date_injection = col_date(format = "%m/%d/%Y"),
+                     date_transfer = col_date(format = "%m/%d/%Y"),
+                     status_date = col_date(format = "%m/%d/%Y"),
+                     sex = col_factor(levels = c("male", "female"))))
+
+ptth_diapause$strain <- factor(ptth_diapause$strain)
+
+str(ptth_diapause)
+
+ptth_diapause = ptth_diapause %>% filter(status_011824 != "dead")
+ptth_diapause$pdd = as.numeric(ptth_diapause$status_date - ptth_diapause$date_transfer)
+
+```
+
+lm(mass ~ treatment*strain)
+```{r, warning=FALSE}
+m1_lm <- lm(mass_011824 ~ treatment*strain, data = ptth_diapause)
+report::report(m1_lm)
+summary(m1_lm)
+
+```
+
+ANOVA
+```{r, warning=FALSE}
+
+report::report(car::Anova(lm(mass_011824 ~ treatment*strain,
+                             data = ptth_diapause),
+           type=2))
+
+Anova(m1_lm)
+
+```
+
+
+test for significant differences among groups
+```{r, warning=FALSE}
+report::report(t.test(formula = mass_011824 ~ treatment,
+       subset = treatment %in% c("ptth", "control"),
+       data = ptth_diapause))
+
+pairs(emmeans(lm(mass_011824 ~ treatment, data = ptth_diapause), ~ treatment, type = 'response'))
+
+```
+
+emmeans
+```{r}
+m1_emms <- emmeans(m1_lm, ~ treatment*strain,type = "response") 
+
+contrast(m1_emms,
+         method = 'pairwise',
+         adjust='by')
+
+#Benjamini & Yekutieli (BY) adjustment, most conservative than Benjamini & Hochberg (BH)
+
+#pairs(m1_emms)
+pairs(emmeans(m1_emms, ~ treatment | strain,type = "response"))
+39.4-8.87*qnorm(0.975)
+39.4+8.87*qnorm(0.975)
+
+24.9-8.15*qnorm(0.975)
+24.9+8.15*qnorm(0.975)
+```
+
+Print group means and identify significant differences
+```{r}
+#Perform Tukey test ONLY appropriate when the sampling design is balanced and homoscedastic
+m1_multcomp <- multcomp::cld(m1_emms, adjust = 'by', Letters = letters, decreasing=TRUE) %>%
+  mutate(.group = gsub(" ", "", .group))
+
+m1_multcomp
+
+```
+
+
+
+plot and see if mass differs between genetic background and treatment
+```{r, warning=FALSE}
+
+p_mass = ggplot(data=ptth_diapause %>% filter(status_011824 != "dead"),
+       aes(x = strain, y = mass_011824, colour = treatment)) + 
+  geom_boxplot(outlier.shape = NA, size=0.5) +
+  geom_point(aes(x = strain, y = mass_011824, colour = treatment),
+             position=position_jitterdodge(),
+             size = 3,
+             alpha = 0.5) +
+  scale_colour_manual(values = c('ptth' = "orange", 'control' = "#00BFC4"),
+                                      labels = c(expression(Mutant~(italic(ptth)~sgRNA)),
+                                                 "Wildtype (control sgRNA)"))+
+  scale_y_continuous(name = "Mass (mg)",
+                 limits = c(0,225)) +
+  theme_bw()  +
+  theme(text = element_text(size = 20, family = "sans", color = 'black'),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = c(0.15,0.10),
+        legend.title = element_blank())
+
+p_mass = p_mass + geom_text(data = m1_multcomp,
+                   aes(label = .group, x = strain, y = rep(225, 4), group=treatment),
+                   position=position_dodge(width=0.75),
+                   color = 'black', size = 6) +
+  scale_x_discrete(name = "Genotype",
+                   labels = c(expression(italic(Z)^B*"/"*italic(Z)^U*"+"*italic(Z)^U*"/"*italic(W)),
+                              expression(italic(Z)^B*"/"*italic(Z)^U*"+"*italic(Z)^B*"/"*italic(W))))
+
+p_mass
+
+ggsave("../plots/ptth_diapause_mass.png", plot = p_mass, width = 8, height = 6, dpi = 1000)
+
+```
+
+
+summarize data
+```{r}
+ptth_diapause_grouped = ptth_diapause %>% ungroup() %>% 
+                group_by(treatment, strain) %>% filter(status_011824 != "dead", n() > 2) %>% 
+                summarize(n = n(),
+                   mu_mass = round(mean(mass_011824, na.rm = TRUE),0),
+                   lower_mass = round(mu_mass-qnorm(0.975)*sd(mass_011824, na.rm = TRUE)/sqrt(n), 0),
+                   upper_mass = round(mu_mass+qnorm(0.975)*sd(mass_011824, na.rm = TRUE)/sqrt(n), 0),
+                   mu_mass_transfer = round(mean(mass_transfer, na.rm = TRUE),0),
+                   diapause_success = sum(status_011824 == "larva"),
+                   diapause_fail = sum(status_011824 != "larva"),
+                   diapause_inc = round(diapause_success/sum(diapause_fail+diapause_success),2),
+                   final_larva = sum(mortality_final == 'larva') ,
+                   final_adult = sum(mortality_final == 'pupa' | mortality_final == 'larval/pupal_intermediate' | mortality_final == 'moth'),
+                   final_larva_inc = round(final_larva/sum(final_larva, final_adult),2))
+
+ptth_diapause_grouped$diapause_success <- c(20,27,32,33)
+ptth_diapause_grouped$diapause_fail <- c(4,4,15,26)
+
+
+```
+
+effect of genetic background and treatment on diapause incidence
+
+```{r}
+m1_dia <- glm(cbind(diapause_success,diapause_fail) ~ treatment, 
+                  data = ptth_diapause_grouped, 
+                  family = binomial(link = "identity"))
+m2_dia <- glm(cbind(diapause_success,diapause_fail) ~ treatment+strain, 
+                  data = ptth_diapause_grouped, 
+                  family = binomial(link = "identity"))
+m3_dia <- glm(cbind(diapause_success,diapause_fail) ~ treatment*strain, 
+                  data = ptth_diapause_grouped, 
+                  family = binomial(link = "identity"))
+m4_dia <- glm(cbind(diapause_success,diapause_fail) ~ strain, 
+                  data = ptth_diapause_grouped, 
+                  family = binomial(link = "identity"))
+
+ICtab(m1_dia, m2_dia, m3_dia, m4_dia)
+lrtest(m1_dia, m3_dia)
+
+Anova(m3_dia, type = "2")
+summary(m3_dia) #model is NOT overdispersed :) 
+
+```
+
+```{r}
+
+m3_emms <- emmeans(m3_dia, ~ treatment*strain,type = "response")
+pairs(emmeans(m3_dia, ~ treatment | strain,type = "response"), adjust='none')
+
+pairs(emmeans(m1_dia, ~ treatment ,type = "response"), adjust='none')
+
+0.241-0.0671*qnorm(0.975)
+0.241+0.0671*qnorm(0.975)
+
+emmeans(m1_dia, ~ treatment ,type = "response") #report the Z statistic
+#To calculate Wald's Z (coef/SE)^2, whereby the Z.ratio is (coef/SE)^2/(coef/SE)
+
+
+```
+
+```{r}
+
+m3_multcomp = multcomp::cld(m3_emms, adjust = 'none', Letters = letters, decreasing=TRUE) %>%
+  mutate(.group = gsub(" ", "", .group))
+
+```
+
+
+```{r, warning=FALSE}
+p_diapause =  ggplot(data = m3_multcomp,
+              aes(x = strain, y = emmean*100, colour = treatment,
+                  ymin = asymp.LCL*100, ymax = asymp.UCL*100)) +
+                    geom_errorbar(position=position_dodge(width=0.75)) +
+                    geom_point(position=position_dodge(width=0.75), size =3) +
+                    scale_colour_manual(values = c('ptth' = "orange",
+                                                 'control' = "#00BFC4"),
+                                      labels = c(expression(Mutant~(italic(ptth)~sgRNA)),
+                                                 "Wildtype (control sgRNA)")) +
+                    scale_y_continuous(name = "Diapause Incidence (%)", limits = c(0,106)) +
+                    theme_bw() +
+                    theme(text = element_text(size = 20, family = "sans", color = 'black'),
+                          panel.grid.major = element_blank(),
+                          panel.grid.minor = element_blank(),
+                          legend.position = c(0.15,0.10),
+                          legend.title = element_blank())
+
+p_diapause = p_diapause + geom_text(data = m3_multcomp,
+                   aes(label = .group, x = strain, y = rep(106, 4), group=treatment),
+                   position=position_dodge(width=0.75),
+                   color = 'black', size = 6) +
+  scale_x_discrete(name = "Genotype",
+                   labels = c(expression(italic(Z)^B*"/"*italic(Z)^U*"+"*italic(Z)^U*"/"*italic(W)),
+                              expression(italic(Z)^B*"/"*italic(Z)^U*"+"*italic(Z)^B*"/"*italic(W))))
+
+p_diapause
+
+p_combined = ggarrange(p_mass, p_diapause, ncol = 2)
+
+p_mass = p_mass + theme(text = element_text(size = 14))
+p_diapause = p_diapause + theme(text = element_text(size = 14))
+p_combined = ggarrange(p_mass, p_diapause, ncol = 2, common.legend = TRUE, legend = "top",
+                       labels = c("A", "B"))
+
+p_combined
+ggsave("../plots/figure5.png", plot = p_combined, width = 10, height = 4, dpi = 1000)
+
+```
