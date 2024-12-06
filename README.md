@@ -14,4 +14,4 @@
     - *figure4_QCT_model_schematic.R*
     - *figure5_QCT_experiment.Rmd*
 
-**Manuscript:** *dayton_2024_ms.docx*
+**Manuscript:** *dayton_2024_ms.pdf*
