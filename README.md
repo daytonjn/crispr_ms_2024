@@ -13,3 +13,5 @@
  3) Leveraged Quantitative Complementation Test (QCT) approach and mutagenesis to evaluate evidence for additive effects of *ptth* knockout, *per* genotype (uni- vs. bivoltine), and a **genetic** interaction (epistasis) between *ptth* AND *per* on diapause incidence & mass (see below). 
     - *figure4_QCT_model_schematic.R*
     - *figure5_QCT_experiment.Rmd*
+
+**Manuscript:** *dayton_2024_ms.docx*
