@@ -1,6 +1,6 @@
 # CRISPR manuscript
 
-**Description:** Scripts to reproduce analyses reported in Dayton et al. ([2024](https://doi.org/10.1111/imb.12959)): Efficient CRISPR/Cas9-mediated genome editing in the European corn borer, *Ostrinia nubilalis*.
+**Description:** Scripts to reproduce analyses reported in Dayton et al. (2024): [Efficient CRISPR/Cas9-mediated genome editing in the European corn borer, *Ostrinia nubilalis*](https://doi.org/10.1111/imb.12959).
 
 **Purpose:** A CRISPR/Cas9 gene-editing & microinjection protocol was developed for the European corn borer, a major agricultural pest in the USA. The contribution of *period*, *pigment-dispersing factor receptor*, and genetic background on daily behaviors (eclosion timing) & development (diapause propensity, mass) were quantified. Analyses were all run in R.  
 
